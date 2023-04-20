@@ -1,3 +1,4 @@
-import pygame
-from pygame import *
-from pygame.locals import *
+import instance
+
+if __name__ == '__main__':
+    instance.create()

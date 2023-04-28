@@ -1,9 +1,11 @@
 from scene import Scene
+from state import State
 from menu import Menu
 from game import Game
 from score import Score
 
 import pygame
+
 
 
 def create():
@@ -14,9 +16,9 @@ def create():
 
     clock = pygame.time.Clock()
 
-    state = Scene.GAME
+    state = State()
 
-    states = {
+    modules = {
         Scene.MENU  :   Menu(screen, state),
         Scene.GAME  :   Game(screen, state),
         Scene.SCORE :   Score(screen, state)
@@ -30,7 +32,7 @@ def create():
                 pygame.quit()
                 exit()
 
-        states[state].run(events)
+        modules[ state.scene ].run(events)
 
         clock.tick(  )
 

@@ -24,7 +24,7 @@ class Score(Module):
         }
 
 
-    def run(self, events):
+    def run(self, events, clock):
 
         for event in events:
             if event.type == pygame.KEYDOWN: #Remove below
@@ -70,5 +70,7 @@ class Score(Module):
         pygame.draw.rect(self.screen, bar_color, pygame.Rect(bar_position[0] + 2, bar_position[1] + 2, full_bar, bar_size[1] - 2 * 2))
 
         pygame.display.flip()
+
+        clock.tick()
 
         

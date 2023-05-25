@@ -1,5 +1,8 @@
 import platform
-import resource
+try:
+    import resource
+except ImportError:
+    pass
 import sys
 
 import instance

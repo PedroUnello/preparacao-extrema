@@ -9,7 +9,7 @@ import pygame
 def create():
 
     pygame.init()
-    screen_size = (1280, 720)
+    screen_size = (1600, 900)
     screen = pygame.display.set_mode(screen_size, 0, 32)
 
     clock = pygame.time.Clock()
@@ -30,9 +30,7 @@ def create():
                 pygame.quit()
                 exit()
 
-        modules[ state.scene ].run(events)
-
-        clock.tick(  )
+        modules[ state.scene ].run(events, clock)
 
         pygame.display.update()
 

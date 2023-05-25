@@ -9,5 +9,5 @@ class Module(ABC):
         self.state = state
 
     @abstractmethod
-    def run(self, events:list[pygame.event.Event]):
+    def run(self, events:list[pygame.event.Event], clock:pygame.time.Clock):
         pass

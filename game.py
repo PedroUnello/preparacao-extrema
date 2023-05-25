@@ -3,13 +3,14 @@ from scene import Scene
 from state import State
 from typing import Tuple, List
 from utils import *
+from datetime import timedelta
 
 from enum import Enum
 import pygame
 import math
 
 BACKGROUND_COLOR = (255, 255, 255)
-RECTANGLE_COLOR = (135, 156, 232)
+RECTANGLE_COLOR = (135, 156, 232, 50)
 CENARIO_RECTANGLE_COLOR = (255, 0, 0)
 FONT_COLOR = (255, 255, 255) 
 WHITE = (255, 255, 255)
@@ -32,67 +33,113 @@ class Correct(Enum):
 
 class UI():
     def __init__(self, screen_width, UI_height = 50) -> None:
+        
         self.__font = pygame.font.SysFont(None, 30)
 
         self.__width = screen_width
         self.__height = UI_height
         self.surface = pygame.surface.Surface(( self.__width, self.__height ), pygame.SRCALPHA, 32)
 
-    def draw(self, name, cenario, currency, satisfaction ):
+        # Load images and persist in a attribute (image_list)
+        icon_width, icon_height = 30, 30
+        money = pygame.image.load("./sprites/money.png")
+        money = pygame.transform.scale(money, (icon_width, icon_height))
+        integrity = pygame.image.load("./sprites/Integrity.png")
+        integrity = pygame.transform.scale(integrity, (icon_width, icon_height))
+        satisfaction_bar = pygame.image.load("./sprites/Satisfaction_bar.png")
+        satisfaction_bar = pygame.transform.scale(satisfaction_bar, (self.__width * 0.3, self.__height * 0.35))
+        overwatch = pygame.image.load("./sprites/overwatch.png")
+        overwatch = pygame.transform.scale(overwatch, (self.__width * 0.15 * 0.5, self.__height * 0.35))
+        self.__image_list = [
+            money,
+            integrity,
+            satisfaction_bar,
+            overwatch
+        ]
+
+    def draw(self, name, cenario, currency, satisfaction, city_integrity, time_left, additional_info_object = None ):
+
+        self.surface.fill((0,0,0,0))
+
+        #Section - Player info
+        player_info_rect = pygame.rect.Rect( 0, 0, self.__width * 0.4, self.__height )
+        player_info = pygame.surface.Surface( player_info_rect.size, pygame.SRCALPHA, 32 )
+        pygame.draw.rect(player_info, RECTANGLE_COLOR, player_info.get_rect(), 0, 20)
+        pygame.draw.rect(player_info, (155, 186, 252), player_info.get_rect(), 10, 20)
+        #Section - Game Info
+        game_info_rect = pygame.rect.Rect( self.__width * 0.425, self.__height * 0.2, self.__width * 0.15, self.__height * 0.5 )
+        game_info = pygame.surface.Surface( game_info_rect.size, pygame.SRCALPHA, 32 )
+        pygame.draw.rect(game_info, RECTANGLE_COLOR, game_info.get_rect(), 0, 50)
+        pygame.draw.rect(game_info, (155, 186, 252), game_info.get_rect(), 5, 50)
+        #Section - Overwatch info
+        overwatch_info_rect = pygame.rect.Rect( self.__width * 0.835, self.__height * 0.1, self.__width * 0.15, self.__height )
+        overwatch_info = pygame.surface.Surface( overwatch_info_rect.size, pygame.SRCALPHA, 32 )
+        deslocated_rect = overwatch_info.get_rect()
+        #Draw borders
+        pygame.draw.polygon(overwatch_info, (155, 186, 252), 
+                            [
+                                (deslocated_rect.width * 0.8, deslocated_rect.height * 0.05), 
+                                (deslocated_rect.width * 0.6, deslocated_rect.height * 0.35),
+                                (deslocated_rect.width * 0.8, deslocated_rect.height * 0.65),
+                                (deslocated_rect.width, deslocated_rect.height * 0.35)
+                            ])
+        pygame.draw.polygon(overwatch_info, RECTANGLE_COLOR, 
+                            [
+                                (deslocated_rect.width * 0.8, deslocated_rect.height * 0.05), 
+                                (deslocated_rect.width * 0.6, deslocated_rect.height * 0.35),
+                                (deslocated_rect.width * 0.8, deslocated_rect.height * 0.65),
+                                (deslocated_rect.width, deslocated_rect.height * 0.35)
+                            ], 5)
+        pygame.draw.circle(overwatch_info, RECTANGLE_COLOR, (deslocated_rect.width * 0.8, deslocated_rect.height * 0.35), deslocated_rect.width * 0.125)
+        #Mask photo in a circle picture (using a subsurface with masking circle and blend)
+        photo_position = (deslocated_rect.width * 0.8 - self.__image_list[3].get_width() * 0.5, deslocated_rect.height * 0.35  - self.__image_list[3].get_height() * 0.5)
+        photo_mask = pygame.surface.Surface( self.__image_list[3].get_size(), pygame.SRCALPHA )
+        pygame.draw.circle(photo_mask, (255,255,255,255), (self.__image_list[3].get_width() * 0.5, self.__image_list[3].get_height() * 0.5), deslocated_rect.width * 0.125)
+        photo_mask.blit(self.__image_list[3], (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        #Blit result.
+        overwatch_info.blit(photo_mask, photo_position)
+        #Section - Overwatch Chat
+        overwatch_chat_rect = pygame.rect.Rect( self.__width * 0.6, self.__height * 0.1, self.__width * 0.32, self.__height )
+        overwatch_chat = pygame.surface.Surface( overwatch_chat_rect.size, pygame.SRCALPHA, 32 )
+        deslocated_rect = overwatch_chat.get_rect()
+        chat_rect = pygame.Rect( deslocated_rect.width * 0.05, deslocated_rect.height * 0.05, deslocated_rect.width * 0.95, deslocated_rect.height * 0.8 )
+        pygame.draw.rect(overwatch_chat, RECTANGLE_COLOR, chat_rect, 0, 5)
+        pygame.draw.rect(overwatch_chat, (155, 186, 252), chat_rect, 5, 5)
+
         name_text = self.__font.render(name, True, FONT_COLOR)
         cenario_text = self.__font.render(cenario, True, FONT_COLOR)
+        money_text = self.__font.render("R$ " + str(currency), True, FONT_COLOR)
+        satisfaction_text = self.__font.render(str(satisfaction) + "%", True, FONT_COLOR)
+        city_integrity_text = self.__font.render(str(city_integrity) + "%", True, FONT_COLOR)
+        time_left_text = self.__font.render(str(timedelta(seconds=time_left)), True, FONT_COLOR)
 
-        # Definir a posição e o tamanho do retângulo
-        rectangle_width = 200
-        rectangle_height = 50
-        rectangle_position = (self.__width - rectangle_width, 0)
+        bar_position_x = player_info_rect.width * 0.5 - self.__image_list[2].get_width() * 0.5
+        bar_position_y = player_info_rect.height * 0.3
 
-        # Calcular a largura e a altura do retângulo necessário para conter o texto
-        width_name_text, height_name_text = name_text.get_size()
-        rectangle_width_2 = width_name_text + 20
-        rectangle_height_2 = height_name_text + 20
+        #Draw all texts
+        player_info.blit(name_text, (player_info_rect.width * 0.5 - name_text.get_width() * 0.5, player_info_rect.height * 0.1))
+        player_info.blit(self.__image_list[0], (player_info_rect.width * 0.53 + city_integrity_text.get_width() * 0.2, player_info_rect.height * 0.65))
+        player_info.blit(money_text, (player_info_rect.width * 0.6 + city_integrity_text.get_width() * 0.2, player_info_rect.height * 0.7))
+        player_info.blit(self.__image_list[2], (bar_position_x, bar_position_y))
+        player_info.blit(satisfaction_text, (player_info_rect.width * 0.08 - satisfaction_text.get_width() * 0.5, player_info_rect.height * 0.3))
+        player_info.blit(self.__image_list[1], (player_info_rect.width * 0.23, player_info_rect.height * 0.65))
+        player_info.blit(city_integrity_text, (player_info_rect.width * 0.3, player_info_rect.height * 0.7))
+        game_info.blit(cenario_text, (game_info_rect.width * 0.5 - cenario_text.get_width() * 0.5, game_info_rect.height * 0.5))
+        game_info.blit(time_left_text, (game_info_rect.width * 0.5 - time_left_text.get_width() * 0.5, game_info_rect.height * 0.2))
+        
+        indicator_pos = lerp(bar_position_x, bar_position_x + self.__image_list[2].get_width() , satisfaction / 100 )
+        pygame.draw.polygon(player_info, WHITE, 
+                            [
+                                (indicator_pos - 10, bar_position_y - 5), 
+                                (indicator_pos + 10, bar_position_y - 5), 
+                                (indicator_pos, bar_position_y + 5)
+        ])
 
-        width_text_cenario, height_text_cenario = cenario_text.get_size()
-        rectangle_width_cenario = width_text_cenario + 20
-        rectangle_height_cenario = height_text_cenario + 20
-
-        # Definir a posição do retângulo
-        rectangle_position_2 = (10, 10)
-        rectangle_position_cenario = ((self.__width - rectangle_width_cenario) // 2, 10)
-
-        # Criar o retângulo
-        rectangle = pygame.Rect(rectangle_position_2, (rectangle_width_2, rectangle_height_2))
-        rectangle_cenario = pygame.Rect(rectangle_position_cenario, (rectangle_width_cenario, rectangle_height_cenario))
-
-        # Preencher o retângulo com a cor desejada
-        pygame.draw.rect(self.surface, RECTANGLE_COLOR, rectangle)
-        pygame.draw.rect(self.surface, CENARIO_RECTANGLE_COLOR, rectangle_cenario)
-
-        # Desenhar o texto do nome do jogador no retângulo
-        self.surface.blit(name_text, (rectangle.x + 10, rectangle.y + 10))
-        self.surface.blit(cenario_text, (rectangle_cenario.x + 10, rectangle_cenario.y + 10))
-
-        # Definir a posição e o tamanho do ícone do dinheiro
-        icon_width = 30
-        icon_height = 30
-        icon_position = (rectangle_position[0] + 5, rectangle_position[1] + 10)
-
-        # Carregar o ícone do dinheiro e redimensioná-lo
-        icon = pygame.image.load("./sprites/money.png")
-        icon = pygame.transform.scale(icon, (icon_width, icon_height))
-
-        # Desenhar o retângulo e o ícone na janela
-        pygame.draw.rect(self.surface, WHITE, (rectangle_position, (rectangle_width, rectangle_height)))
-        self.surface.blit(icon, icon_position)
-
-        # Renderizar o texto do dinheiro
-        money_text = self.__font.render("R$ " + str(currency), True, (0, 0, 0))
-
-        # Definir a posição do texto dentro do retângulo
-        money_position = (rectangle_position[0] + icon_width + 10, rectangle_position[1] + 10)
-
-        # Desenhar o texto na janela
-        self.surface.blit(money_text, money_position)
+        self.surface.blit(player_info, player_info_rect.topleft)
+        self.surface.blit(game_info, game_info_rect.topleft)
+        if additional_info_object != None:
+            self.surface.blit(overwatch_chat, overwatch_chat_rect.topleft)
+        self.surface.blit(overwatch_info, overwatch_info_rect.topleft)
 
 class GameObject():
     def __init__(self, surface:pygame.Surface, initial_pos:Tuple[int, int], 
@@ -271,7 +318,7 @@ class Game(Module):
                     '.': dirt_tile_surf,
                     '-': water_surf
                 }[tile] for tile in line.replace("\n", "")
-            ] for line in open( '/home/pedrounello/Área de Trabalho/preparacao-extrema/cenarios/Toquio.txt', 'r').readlines() if len(line.replace("\n", "")) > 0
+            ] for line in open( './cenarios/Toquio.txt', 'r').readlines() if len(line.replace("\n", "")) > 0
         ]
 
         #Create a list of gameobjs named "static"
@@ -282,7 +329,8 @@ class Game(Module):
 
         # ---- UI ----
         
-        self.__player_UI = UI( self.screen.get_width(), 50 )
+        self.__player_UI = UI( self.screen.get_width(), self.screen.get_height() * 0.185 )
+        self.__show = True
         
         # ---- Camera ----
 
@@ -293,9 +341,20 @@ class Game(Module):
 
         self.__currency = 10
         self.__satisfaction = 50
+        self.__city_integrity = 100
+        self.__time_left = 600
 
-    def run(self, events):
-        
+    def run(self, events, clock):
+
+        game_finished = self.__satisfaction <= 0 or self.__time_left <= 0 or self.__city_integrity <= 0
+
+        if game_finished:
+            #Fill in score
+            self.state.scene = Scene.SCORE
+
+        self.__satisfaction = clamp(self.__satisfaction, 0, 100)
+        self.__city_integrity = clamp(self.__city_integrity, 0, 100)
+
         delta_value = (0, 0)
         current_pos = pygame.mouse.get_pos()
 
@@ -304,13 +363,17 @@ class Game(Module):
                 delta_value = (current_pos[0] - self.__last[0], current_pos[1] - self.__last[1])
                 delta_value = (clamp( delta_value[0], -1, 1 ), clamp( delta_value[1], -1, 1 ))
                 self.__last = current_pos
-            if event.type == pygame.KEYDOWN: #Remove below
+            if event.type == pygame.KEYDOWN: 
+                if event.key == pygame.K_q:
+                    self.__show = not self.__show 
+                #Remove below
                 if event.key == pygame.K_LEFT:
                     self.state.scene = Scene.MENU
                 if event.key == pygame.K_SPACE:
-                    self.__currency += 15
+                    self.__satisfaction += 15
                 if event.key == pygame.K_RIGHT:
                     self.state.scene = Scene.SCORE
+                
         
         screen_x = self.screen.get_width()
         screen_y = self.screen.get_height()
@@ -339,7 +402,10 @@ class Game(Module):
         self.screen.blit(isometric_canvas, ( 0, 0 ))
 
         #UI
-        self.__player_UI.draw( self.state.name, self.state.cenario, self.__currency, self.__satisfaction )
-        self.screen.blit(self.__player_UI.surface, (0,0))
+        if self.__show:
+            self.__player_UI.draw( self.state.name, self.state.cenario, self.__currency, self.__satisfaction, self.__city_integrity, int(self.__time_left) )
+            self.screen.blit(self.__player_UI.surface, (0,0))
 
         pygame.display.flip()
+
+        self.__time_left -= clock.tick() / 1000

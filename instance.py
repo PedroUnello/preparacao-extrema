@@ -6,8 +6,6 @@ from score import Score
 
 import pygame
 
-
-
 def create():
 
     pygame.init()

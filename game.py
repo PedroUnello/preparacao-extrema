@@ -4,6 +4,7 @@ from state import State
 from typing import Tuple, List
 from utils import *
 
+from enum import Enum
 import pygame
 import math
 
@@ -13,7 +14,21 @@ CENARIO_RECTANGLE_COLOR = (255, 0, 0)
 FONT_COLOR = (255, 255, 255) 
 WHITE = (255, 255, 255)
 
+#Satisfacao formulada a base de
+# Desastre ocorreu / danos maximos ->   -A pontos
+#                                       + A * Y (medidas preventivas --+-- 2 caso nenhuma, -.5 por correta, .25 por errada )
+#                                       + A * Z (verba --+-- -.2 por 10% de verba atual dentre maxima)
+# Desastre ocorreu / danos minimos ->   -B pontos
+#                                       + B * Y
+#                                       + B * Z (verba --+-- 1 por < 10% de verba atual, -0.35 por 10% de verba atual enquanto < 50%, 0.05 por 10% )
+
 cursor_size = 48
+
+class Correct(Enum):
+    NONE = 0
+    STRETCH = 1
+    DUPLICATE = 2
+    SCALE = 3
 
 class UI():
     def __init__(self, screen_width, UI_height = 50) -> None:
@@ -80,69 +95,150 @@ class UI():
         self.surface.blit(money_text, money_position)
 
 class GameObject():
-    #Take last argument as texture map, so that will ignore the normal filling behaviour 
-    # and follow the len of map for filling with correct texture (as int index of texture list)
     def __init__(self, surface:pygame.Surface, initial_pos:Tuple[int, int], 
-                                               texture:pygame.Surface = None|List[pygame.Surface], texture_map:List[int] = None):
+                                               texture:pygame.Surface = None|List[List[pygame.Surface]], 
+                                               stretch_inside:bool = False,
+                                               correct_size:Correct = Correct.NONE):
         #Setup
         self.surface = surface
         self.origin = initial_pos  
         self.pos = self.origin
-        #Re-scale
-        self.__s_width, self.__s_height = self.surface.get_width(), self.surface.get_height()
-        sin = math.sin( math.radians( 45 ) ) 
-        cos = math.cos( math.radians( 45 ) ) 
-        size_x = abs( self.__s_width * sin ) + abs( self.__s_height * cos )
-        size_y = abs( self.__s_width * cos ) + abs( self.__s_height * sin )
-        self.surface = pygame.transform.scale( self.surface, (size_x * 2, size_y) )
-        #Draw
-        if texture != None:
-            self.__texture = texture
-            if texture_map != None:
-                self.__texture_map = texture_map
-            self.__draw()
-
-    def __draw(self):
-
-        t_width, t_height = self.__texture.get_width(), self.__texture.get_height()
-
-        isometric_tiles = isometric_surface(self.__texture)
-
-        s_center = self.surface.get_width() // 2
-
-        for tile_horizontal_pos in range( self.__s_width  // t_width ):
-            for tile_vertical_pos in range( self.__s_height // t_height ):
-                
-                current_pos = (tile_horizontal_pos * t_width, tile_vertical_pos * t_height)
-                current_pos = isometric_point_displacement( current_pos )
-
-                relocated_pos = (current_pos[0] + s_center - t_width, current_pos[1])
-                self.surface.blit( isometric_tiles, relocated_pos )
-
-    def hover(self, pos:Tuple[int,int], size:Tuple[int,int] ):
-
-        #self.__draw()
         
-        where_to = ( pos[0] - self.pos[0], pos[1] - self.pos[1] )
-        where_to_iso = isometric_point_displacement(where_to)
+        self.__s_width, self.__s_height = self.surface.get_width(), self.surface.get_height()
+        self.__stretch_inside = stretch_inside
+        self.__correct_size = correct_size
+        
+        self.__texture, self.__t_size = self.__load( texture )
+        
+        
 
-        t_width, t_height = self.__texture.get_width(), self.__texture.get_height()
-        for tile_horizontal_pos in range( size[0]  // t_width ):
-            for tile_vertical_pos in range( size[1] // t_height ):
+        #Draw
+        self.draw()     
+
+    def __load(self, texture) -> Tuple[ List[List[Tuple[pygame.Surface, Tuple[int, int]]]], Tuple[int, int] ]:
+        
+        self.surface.fill( (0, 0, 0, 0) )
+        
+        loaded_texture = []
+
+        if type( texture ) == list:
+            
+            texture_height = 0
+            texture_width = 0
+
+            for i in range( len(texture) ):
                 
-                current_pos = (tile_horizontal_pos * t_width, tile_vertical_pos * t_height)
-                current_pos = isometric_point_displacement( current_pos )
+                loaded_texture.append( [] )
 
-                relocated_pos = (current_pos[0] + where_to_iso[0], current_pos[1] + where_to_iso[1])
+                line = texture[i]
+                line_size = len(line)
+                
+                if (line_size <= 0):
+                    continue
+                
+                line_width = 0
+                sorted_line = line
+                sorted_line.sort(key=lambda e : e.get_height(), reverse=True)
+                line_height = sorted_line[0].get_height()
 
-                red_ver = pygame.Surface((t_width, t_height), pygame.SRCALPHA, 32)
-                pygame.draw.rect(red_ver, (255,0,0), pygame.Rect(0, 0, t_width, t_height), 2)
-                pygame.draw.rect(red_ver, (200,0,0), pygame.Rect(0, 0, t_width, t_height))
+                for j in range( len(line) ):
 
-                self.surface.blit( red_ver, relocated_pos )
+                    tile = line[j]
+                    t_width, t_height = tile.get_width(), tile.get_height()
+                    current_pos = (line_width, texture_height)
+
+                    if (line_height > t_height and self.__stretch_inside):
+                        tile = pygame.transform.scale( tile, ( t_width, line_height ) )
+                
+                    loaded_texture[i].append((tile, current_pos))
+                    
+                    line_width += t_width
+                
+                texture_height += line_height
+                texture_width = max(line_width, texture_width)
+        else:
+            t_width, t_height = texture.get_width(), texture.get_height()
+            for tile_horizontal_pos in range( self.__s_width  // t_width ):
+                loaded_texture.append([])
+                for tile_vertical_pos in range( self.__s_height // t_height ):
+                    current_pos = (tile_horizontal_pos * t_width, tile_vertical_pos * t_height)
+                    loaded_texture[tile_horizontal_pos].append((texture, current_pos))
+            texture_width = tile_horizontal_pos * t_width
+            texture_height = tile_vertical_pos * t_height
+
+        return (loaded_texture, (texture_width, texture_height))
+
+    def draw(self):
+        self.surface.fill( (0, 0, 0, 0) )
+
+        canvas = pygame.Surface( (self.__s_width, self.__s_height), pygame.SRCALPHA, 32)
+        for line in self.__texture:
+            for tile in line:
+                canvas.blit(tile[0], tile[1])
+
+        texture_width, texture_height = self.__t_size
+        smaller_width =  texture_width < self.__s_width 
+        smaller_height = texture_height < self.__s_height 
+        if smaller_width or smaller_height:
+            match self.__correct_size:
+                case Correct.SCALE:
+                    new_width = self.__s_width * ((self.__s_width - texture_width) if smaller_width else 1)
+                    new_height = self.__s_height * ((self.__s_height - texture_height) if smaller_height else 1)
+                    canvas = pygame.transform.scale( canvas, (new_width, new_height))
+                case Correct.STRETCH:
+                    if (smaller_height and len(self.__texture[-1])) > 0:
+                        line = self.__texture[-1]
+                        sorted_line = line
+                        sorted_line.sort(key=lambda e : e.get_height(), reverse=True)
+                        line_height = sorted_line[0].get_height()
+                        line_width = 0
+                        pos_y = texture_height - line_height
+                        for tile in line:
+                            t_width = tile.get_width()
+                            tile = pygame.transform.scale( tile, (t_width, self.__s_height + (self.__s_height - texture_height) * 2) )
+                            canvas.blit( tile, (line_width, pos_y) )
+                            line_width += t_width
+                    if (smaller_width):
+                        for i in range( len(self.__texture) ):
+                            if (len(self.__texture[i])) > 0:
+                                sorted_line = self.__texture[i]
+                                sorted_line.sort(key=lambda e : e.get_height(), reverse=True)
+                                line_height = sorted_line[0].get_height()
+                                tile = self.__texture[i][-1]
+                                pos_x = texture_width - tile.get_width()
+                                tile = pygame.transform.scale( tile, (self.__s_width + (self.__s_width - texture_width) * 2, tile.get_height()) )
+                                canvas.blit(tile, (pos_x, line_height))
+                    if (smaller_height and smaller_width):
+                        pass
+                case Correct.DUPLICATE:
+                    while (smaller_height or smaller_width):        
+                        if (smaller_height and smaller_width):
+                            canvas.blit(canvas, (texture_width, texture_height))
+                        if (smaller_height):
+                            canvas.blit(canvas, (0, texture_height))
+                            texture_height += texture_height
+                        if (smaller_width):
+                            canvas.blit(canvas, (texture_width, 0))
+                            texture_width += texture_width
+                        smaller_width = texture_width < self.__s_width 
+                        smaller_height = texture_height < self.__s_height 
+
+        self.surface.blit(canvas, (0,0))
+
+    def hover(self, pos:Tuple[int, int]):
+
+        relocated_pos = (pos[0] - self.pos[0], pos[1] - self.pos[1])
+        relocated_rect = pygame.Rect(relocated_pos[0], relocated_pos[1], 1, 1)
+        for line in self.__texture:
+            for tile in line:
+                if colisao(relocated_rect, tile[0].get_rect( topleft = tile[1] )):
+                    t_width, t_height = tile[0].get_width(), tile[0].get_height()
+                    red_ver = pygame.Surface((t_width, t_height), pygame.SRCALPHA, 32)
+                    pygame.draw.rect(red_ver, (100,0,0, 100), pygame.Rect(0, 0, t_width, t_height))
+                    pygame.draw.rect(red_ver, (255,0,0), pygame.Rect(0, 0, t_width, t_height), 2)
+                    self.surface.blit( red_ver, tile[1] )
 
 class Game(Module):
-
     def __init__(self, screen: pygame.Surface, state:State) -> None:
         super().__init__(screen, state)
 
@@ -154,20 +250,34 @@ class Game(Module):
         half_size = DivideTuple(screen_size, 2)
         quarter_size = DivideTuple(screen_size, 4)
 
-        # ---- Static gameobjects ----
+        # ---- GameObjects ----
+
+        self.__gameobject_canvas = pygame.Surface( (screen.get_width(), screen.get_height()), pygame.SRCALPHA, 32 ) 
+
 
         #Fonte: https://opengameart.org/content/tileable-grass-and-water
         #Exchange for isometric version
         water_surf = pygame.image.load( './sprites/water.png' )
         water_surf = water_surf.convert_alpha()
         #Exchange for pixel art landtile isometric sprite
-        land_tile_surf = pygame.Surface((16, 16), pygame.SRCALPHA, 32)
-        pygame.draw.rect(land_tile_surf, (0,154,23), pygame.Rect(0, 0, 16, 16))
+        grass_tile_surf = pygame.Surface((16, 16), pygame.SRCALPHA, 32)
+        pygame.draw.rect(grass_tile_surf, (0,154,23), pygame.Rect(0, 0, 16, 16))
+        dirt_tile_surf = pygame.Surface((16, 16), pygame.SRCALPHA, 32)
+        pygame.draw.rect(dirt_tile_surf, (155,118,83), pygame.Rect(0, 0, 16, 16))
+
+        map_sprites = [ 
+            [ {
+                    '#': grass_tile_surf,
+                    '.': dirt_tile_surf,
+                    '-': water_surf
+                }[tile] for tile in line.replace("\n", "")
+            ] for line in open( '/home/pedrounello/Área de Trabalho/preparacao-extrema/cenarios/Toquio.txt', 'r').readlines() if len(line.replace("\n", "")) > 0
+        ]
 
         #Create a list of gameobjs named "static"
         self.__static_objs = [
             GameObject(pygame.Surface(double_size, pygame.SRCALPHA, 32), (-screen_size[0],-screen_size[1]), water_surf),
-            GameObject(pygame.Surface(half_size, pygame.SRCALPHA, 32), quarter_size, land_tile_surf)
+            GameObject(pygame.Surface(half_size, pygame.SRCALPHA, 32), quarter_size, grass_tile_surf)
         ]
 
         # ---- UI ----
@@ -209,16 +319,24 @@ class Game(Module):
         self.camera = (new_camera_x, new_camera_y)
 
         self.screen.fill((0,0,40))
+        self.__gameobject_canvas.fill((0,0,0,0))
+
         pygame.draw.rect( self.screen, (155,103,60), self.screen.get_rect(), 10 )
+        
         #Blit and move all "static objs by camera"
         for game_obj in self.__static_objs:
             game_obj.pos = ( game_obj.origin[0] - self.camera[0], game_obj.origin[1] - self.camera[1] )
 
-            if colisao( game_obj.surface.get_rect(), pygame.Rect(current_pos[0], current_pos[1], cursor_size, cursor_size ) ):
-                game_obj.hover( current_pos, (cursor_size,cursor_size) )
+            
+            #if colisao( game_obj.surface.get_rect(), pygame.Rect(current_pos[0], current_pos[1], cursor_size, cursor_size ) ):
+                #game_obj.draw()
+                #game_obj.hover( current_pos )
 
-            self.screen.blit( game_obj.surface, game_obj.pos )
-            pygame.draw.rect( self.screen, (255,0,0), game_obj.surface.get_rect(topleft = game_obj.pos), 1 )
+            self.__gameobject_canvas.blit( game_obj.surface, game_obj.pos )
+            pygame.draw.rect( self.__gameobject_canvas, (255,0,0), game_obj.surface.get_rect(topleft = game_obj.pos), 1 )
+
+        isometric_canvas = isometric_surface(self.__gameobject_canvas)
+        self.screen.blit(isometric_canvas, ( 0, 0 ))
 
         #UI
         self.__player_UI.draw( self.state.name, self.state.cenario, self.__currency, self.__satisfaction )

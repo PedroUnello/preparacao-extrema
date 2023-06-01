@@ -28,7 +28,6 @@ class Menu(Module):
         self.__handle.add.button('Sair', pygame_menu.events.EXIT)
 
     def __play(self):
-        #self.state = State()
         self.state.scene = Scene.GAME
         self.__handle.disable()
 

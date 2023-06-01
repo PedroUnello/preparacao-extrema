@@ -1,13 +1,15 @@
 from module import Module
 from scene import Scene
 from state import State
-from typing import Tuple, List
+from translator import generate_map, water_img
+from typing import List
 from utils import *
+from objects import *
 from datetime import timedelta
 
 from enum import Enum
 import pygame
-import math
+import copy
 
 BACKGROUND_COLOR = (255, 255, 255)
 RECTANGLE_COLOR = (135, 156, 232, 50)
@@ -15,34 +17,88 @@ CENARIO_RECTANGLE_COLOR = (255, 0, 0)
 FONT_COLOR = (255, 255, 255) 
 WHITE = (255, 255, 255)
 
-#Satisfacao formulada a base de
-# Desastre ocorreu / danos maximos ->   -A pontos
-#                                       + A * Y (medidas preventivas --+-- 2 caso nenhuma, -.5 por correta, .25 por errada )
-#                                       + A * Z (verba --+-- -.2 por 10% de verba atual dentre maxima)
-# Desastre ocorreu / danos minimos ->   -B pontos
-#                                       + B * Y
-#                                       + B * Z (verba --+-- 1 por < 10% de verba atual, -0.35 por 10% de verba atual enquanto < 50%, 0.05 por 10% )
+cursor_size = [1, 1]
+current_measures = [None]
+map_size = (50, 50)
+ocean_size = (1, 1)
 
-cursor_size = 48
+def satisfaction_calculator( safety_objects:List[any], budget_left:float, budget_max:float ) -> float:
+    
+    
+    #Satisfacao formulada a base de
+    # Desastre ocorreu / danos maximos ->   -A pontos
+    #                                       + A * Y (medidas preventivas --+-- 2 caso nenhuma, -.5 por correta, .25 por errada )
+    #                                       + A * Z (verba --+-- -.2 por 10% de verba atual dentre maxima)
+    # Desastre ocorreu / danos minimos ->   -B pontos
+    #                                       + B * Y
+    #                                       + B * Z (verba --+-- 1 por < 10% de verba atual, -0.35 por 10% de verba atual enquanto < 50%, 0.05 por 10% )
 
-class Correct(Enum):
-    NONE = 0
-    STRETCH = 1
-    DUPLICATE = 2
-    SCALE = 3
+    satisfaction_increment = 0
+
+    correct_measures = len([ measure for measure in safety_objects if type(measure) == GameObject ])
+    budget_percentage = int((budget_left / budget_max) * 10 )
+
+    serious_damage = False
+
+    if serious_damage:
+        positive_increment_measures = -0.5 * correct_measures
+        negative_increment_measures = 0.25 * (len(safety_objects) - correct_measures)
+        satisfaction_increment -= 5 + 5 * ( 2 + negative_increment_measures + positive_increment_measures ) + 5 * ( -0.2 * budget_percentage)
+    else:
+        positive_increment_measures = -1 * correct_measures
+        negative_increment_measures = 0.125 * (len(safety_objects) - correct_measures)
+        positive_increment_budget = -0.35 * budget_percentage if budget_percentage < 5 else 0
+        negative_increment_budget = 0.05 * budget_percentage if budget_percentage >= 5 else 0
+        fixed_increment_budget = 1 + positive_increment_budget + negative_increment_budget
+        satisfaction_increment -= 2 + 2 * ( 1 + negative_increment_measures + positive_increment_measures ) + 2 * fixed_increment_budget
+
+    return satisfaction_increment
+
+alarme_tectonico = Measure(10, (15, 15), 'Alarme Tectônico', 
+                           """Um alarme que notifica os residentes sobre atividades tectonicas fora do comúm,\n 
+o que precede terremotos, tsunamis e mais, a eficácia é atrelada ao funcionamento\n
+das instituições que medem atividades tectonicas, assim como a distância dos residentes""",
+                           560, (1, 1),  pygame.image.load('./sprites/Subject 12.png'), True, (0, 0) )
+barragem_oceanica = Measure(5, (3, 3), 'Barragem Oceânica', 
+                            """Uma parede sólida, alta e muito reforçada, serve para barrar o avanço d'água\n
+mesmo quando em alturas fora do comúm (em um Tsunami, por exemplo), ainda sim,\n
+faz-se perigoso e impossível subir estas estruturas alto o suficiente para proteger\n
+contra Tsunamis, por risco de deslizamentos e desastres não-naturais""",
+                            245.5, (3, 1),  pygame.image.load('./sprites/Subject 4.png'), True, (0, 0) )
+abrigo_tornado = Measure(25, (10, 10), 'Abrigo de tornado', 
+                            """Um abrigo subterrâneo, feito especialmente para abrigar pessoas fora do alcance\n
+de forças extremas na superfície, muito útil frente a tornados, porém não tão útil com atividades\n
+tectonicas, pois não há proteção contra enchente ou muito valor contra terremotos""",
+                            1300.5, (1, 1),  pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+
+list_of_measures = [
+    alarme_tectonico,
+    barragem_oceanica,
+    abrigo_tornado
+]
+
+tornado = Disaster(5, (4, 4), {abrigo_tornado:10}, (2, 2), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+tsunami = Disaster(5, (4, 4), {alarme_tectonico:5, barragem_oceanica:10}, (2, 2), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+volcano = Disaster(5, (10, 10), {alarme_tectonico:5}, (5, 5), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+
+list_of_disaster = [
+    tornado,
+    tsunami,
+    volcano
+]
 
 class UI():
-    def __init__(self, screen_width, UI_height = 50) -> None:
+    def __init__(self, screen:pygame.Surface, UI_height = 50) -> None:
         
         self.__font = pygame.font.SysFont(None, 30)
 
-        self.__width = screen_width
+        self.__width = screen.get_rect().width
         self.__height = UI_height
-        self.surface = pygame.surface.Surface(( self.__width, self.__height ), pygame.SRCALPHA, 32)
+        self.surface = pygame.surface.Surface(( self.__width, screen.get_rect().height ), pygame.SRCALPHA, 32)
 
         # Load images and persist in a attribute (image_list)
         icon_width, icon_height = 30, 30
-        money = pygame.image.load("./sprites/money.png")
+        money = pygame.image.load("./sprites/Subject - cópia 3.png")
         money = pygame.transform.scale(money, (icon_width, icon_height))
         integrity = pygame.image.load("./sprites/Integrity.png")
         integrity = pygame.transform.scale(integrity, (icon_width, icon_height))
@@ -57,7 +113,9 @@ class UI():
             overwatch
         ]
 
-    def draw(self, name, cenario, currency, satisfaction, city_integrity, time_left, additional_info_object = None ):
+        self.__usable_bar = pygame.surface.Surface( (self.__width, UI_height * 0.5), pygame.SRCALPHA, 32 )
+
+    def draw(self, name, cenario, currency, satisfaction, city_integrity, time_left, mouse_pos, mouse_click ):
 
         self.surface.fill((0,0,0,0))
 
@@ -103,12 +161,13 @@ class UI():
         overwatch_chat = pygame.surface.Surface( overwatch_chat_rect.size, pygame.SRCALPHA, 32 )
         deslocated_rect = overwatch_chat.get_rect()
         chat_rect = pygame.Rect( deslocated_rect.width * 0.05, deslocated_rect.height * 0.05, deslocated_rect.width * 0.95, deslocated_rect.height * 0.8 )
-        pygame.draw.rect(overwatch_chat, RECTANGLE_COLOR, chat_rect, 0, 5)
+        pygame.draw.rect(overwatch_chat, (135, 156, 232), chat_rect, 0, 5)
         pygame.draw.rect(overwatch_chat, (155, 186, 252), chat_rect, 5, 5)
 
+        #Render texts
         name_text = self.__font.render(name, True, FONT_COLOR)
         cenario_text = self.__font.render(cenario, True, FONT_COLOR)
-        money_text = self.__font.render("R$ " + str(currency), True, FONT_COLOR)
+        money_text = self.__font.render("R$ " + str("%.2f" % round(currency, 2)), True, FONT_COLOR)
         satisfaction_text = self.__font.render(str(satisfaction) + "%", True, FONT_COLOR)
         city_integrity_text = self.__font.render(str(city_integrity) + "%", True, FONT_COLOR)
         time_left_text = self.__font.render(str(timedelta(seconds=time_left)), True, FONT_COLOR)
@@ -135,155 +194,48 @@ class UI():
                                 (indicator_pos, bar_position_y + 5)
         ])
 
+        #Draw measure bar and calculates psitions and sizes
+        pygame.draw.rect(self.__usable_bar, RECTANGLE_COLOR, self.__usable_bar.get_rect(), 0, 25)
+        pygame.draw.rect(self.__usable_bar, (255, 255, 255), self.__usable_bar.get_rect(), 8, 25)
+        usable_bar_position = (self.surface.get_rect().left, self.surface.get_rect().bottom - self.__usable_bar.get_rect().height)
+        measure_size = (tile_size[0] * 2, tile_size[1] * 2)
+        selected_measure_size = (tile_size[0] * 2.4, tile_size[1] * 2.4)
+        slot_quantity = (self.__usable_bar.get_width() // measure_size[0]) // 2
+        to_center = slot_quantity - len(list_of_measures)
+        division_size = measure_size[0] / 2
+        
+        #Blit all possible measures
+        measure_font = pygame.font.SysFont(None, 15)
+        for index, measure in enumerate(list_of_measures):
+    
+            if index > slot_quantity:
+                break
+            
+            rescaled = pygame.transform.scale(measure.surface, measure_size)
+            measure_position = (measure_size[0] + 2 * division_size) * (index + to_center // 2)
+            if colisao( rescaled.get_rect(topleft=(measure_position, usable_bar_position[1] + measure_size[1] * 0.4)), pygame.Rect( mouse_pos[0], mouse_pos[1], 5, 5 ) ):
+                
+                #If there is collision, act accordingly
+                for l_index, line in enumerate(measure.description.split('\n')):
+                    chat = measure_font.render(line, True, FONT_COLOR)
+                    overwatch_chat.blit( chat, (overwatch_chat.get_width() * 0.1, overwatch_chat.get_height() * (0.1 + 0.05 * (l_index + 1))))
+                self.surface.blit(overwatch_chat, overwatch_chat_rect.topleft)
+
+                if not mouse_click:
+                    rescaled = pygame.transform.scale(measure.surface, selected_measure_size)
+                else:
+                    cursor_size[0] = measure.tiles[0]
+                    cursor_size[1] = measure.tiles[1]
+                    current_measures[0] = measure
+
+            self.__usable_bar.blit(measure_font.render( measure.name, True, FONT_COLOR ), (measure_position, measure_size[1] * 0.15))
+            self.__usable_bar.blit(measure_font.render( str(measure.price), True, FONT_COLOR), (measure_position, measure_size[1] * 0.3) )
+            self.__usable_bar.blit( rescaled, (measure_position, measure_size[1] * 0.4)  )
+
+        self.surface.blit(self.__usable_bar, usable_bar_position)
         self.surface.blit(player_info, player_info_rect.topleft)
         self.surface.blit(game_info, game_info_rect.topleft)
-        if additional_info_object != None:
-            self.surface.blit(overwatch_chat, overwatch_chat_rect.topleft)
         self.surface.blit(overwatch_info, overwatch_info_rect.topleft)
-
-class GameObject():
-    def __init__(self, surface:pygame.Surface, initial_pos:Tuple[int, int], 
-                                               texture:pygame.Surface = None|List[List[pygame.Surface]], 
-                                               stretch_inside:bool = False,
-                                               correct_size:Correct = Correct.NONE):
-        #Setup
-        self.surface = surface
-        self.origin = initial_pos  
-        self.pos = self.origin
-        
-        self.__s_width, self.__s_height = self.surface.get_width(), self.surface.get_height()
-        self.__stretch_inside = stretch_inside
-        self.__correct_size = correct_size
-        
-        self.__texture, self.__t_size = self.__load( texture )
-        
-        
-
-        #Draw
-        self.draw()     
-
-    def __load(self, texture) -> Tuple[ List[List[Tuple[pygame.Surface, Tuple[int, int]]]], Tuple[int, int] ]:
-        
-        self.surface.fill( (0, 0, 0, 0) )
-        
-        loaded_texture = []
-
-        if type( texture ) == list:
-            
-            texture_height = 0
-            texture_width = 0
-
-            for i in range( len(texture) ):
-                
-                loaded_texture.append( [] )
-
-                line = texture[i]
-                line_size = len(line)
-                
-                if (line_size <= 0):
-                    continue
-                
-                line_width = 0
-                sorted_line = line
-                sorted_line.sort(key=lambda e : e.get_height(), reverse=True)
-                line_height = sorted_line[0].get_height()
-
-                for j in range( len(line) ):
-
-                    tile = line[j]
-                    t_width, t_height = tile.get_width(), tile.get_height()
-                    current_pos = (line_width, texture_height)
-
-                    if (line_height > t_height and self.__stretch_inside):
-                        tile = pygame.transform.scale( tile, ( t_width, line_height ) )
-                
-                    loaded_texture[i].append((tile, current_pos))
-                    
-                    line_width += t_width
-                
-                texture_height += line_height
-                texture_width = max(line_width, texture_width)
-        else:
-            t_width, t_height = texture.get_width(), texture.get_height()
-            for tile_horizontal_pos in range( self.__s_width  // t_width ):
-                loaded_texture.append([])
-                for tile_vertical_pos in range( self.__s_height // t_height ):
-                    current_pos = (tile_horizontal_pos * t_width, tile_vertical_pos * t_height)
-                    loaded_texture[tile_horizontal_pos].append((texture, current_pos))
-            texture_width = tile_horizontal_pos * t_width
-            texture_height = tile_vertical_pos * t_height
-
-        return (loaded_texture, (texture_width, texture_height))
-
-    def draw(self):
-        self.surface.fill( (0, 0, 0, 0) )
-
-        canvas = pygame.Surface( (self.__s_width, self.__s_height), pygame.SRCALPHA, 32)
-        for line in self.__texture:
-            for tile in line:
-                canvas.blit(tile[0], tile[1])
-
-        texture_width, texture_height = self.__t_size
-        smaller_width =  texture_width < self.__s_width 
-        smaller_height = texture_height < self.__s_height 
-        if smaller_width or smaller_height:
-            match self.__correct_size:
-                case Correct.SCALE:
-                    new_width = self.__s_width * ((self.__s_width - texture_width) if smaller_width else 1)
-                    new_height = self.__s_height * ((self.__s_height - texture_height) if smaller_height else 1)
-                    canvas = pygame.transform.scale( canvas, (new_width, new_height))
-                case Correct.STRETCH:
-                    if (smaller_height and len(self.__texture[-1])) > 0:
-                        line = self.__texture[-1]
-                        sorted_line = line
-                        sorted_line.sort(key=lambda e : e.get_height(), reverse=True)
-                        line_height = sorted_line[0].get_height()
-                        line_width = 0
-                        pos_y = texture_height - line_height
-                        for tile in line:
-                            t_width = tile.get_width()
-                            tile = pygame.transform.scale( tile, (t_width, self.__s_height + (self.__s_height - texture_height) * 2) )
-                            canvas.blit( tile, (line_width, pos_y) )
-                            line_width += t_width
-                    if (smaller_width):
-                        for i in range( len(self.__texture) ):
-                            if (len(self.__texture[i])) > 0:
-                                sorted_line = self.__texture[i]
-                                sorted_line.sort(key=lambda e : e.get_height(), reverse=True)
-                                line_height = sorted_line[0].get_height()
-                                tile = self.__texture[i][-1]
-                                pos_x = texture_width - tile.get_width()
-                                tile = pygame.transform.scale( tile, (self.__s_width + (self.__s_width - texture_width) * 2, tile.get_height()) )
-                                canvas.blit(tile, (pos_x, line_height))
-                    if (smaller_height and smaller_width):
-                        pass
-                case Correct.DUPLICATE:
-                    while (smaller_height or smaller_width):        
-                        if (smaller_height and smaller_width):
-                            canvas.blit(canvas, (texture_width, texture_height))
-                        if (smaller_height):
-                            canvas.blit(canvas, (0, texture_height))
-                            texture_height += texture_height
-                        if (smaller_width):
-                            canvas.blit(canvas, (texture_width, 0))
-                            texture_width += texture_width
-                        smaller_width = texture_width < self.__s_width 
-                        smaller_height = texture_height < self.__s_height 
-
-        self.surface.blit(canvas, (0,0))
-
-    def hover(self, pos:Tuple[int, int]):
-
-        relocated_pos = (pos[0] - self.pos[0], pos[1] - self.pos[1])
-        relocated_rect = pygame.Rect(relocated_pos[0], relocated_pos[1], 1, 1)
-        for line in self.__texture:
-            for tile in line:
-                if colisao(relocated_rect, tile[0].get_rect( topleft = tile[1] )):
-                    t_width, t_height = tile[0].get_width(), tile[0].get_height()
-                    red_ver = pygame.Surface((t_width, t_height), pygame.SRCALPHA, 32)
-                    pygame.draw.rect(red_ver, (100,0,0, 100), pygame.Rect(0, 0, t_width, t_height))
-                    pygame.draw.rect(red_ver, (255,0,0), pygame.Rect(0, 0, t_width, t_height), 2)
-                    self.surface.blit( red_ver, tile[1] )
 
 class Game(Module):
     def __init__(self, screen: pygame.Surface, state:State) -> None:
@@ -293,43 +245,30 @@ class Game(Module):
         
         screen_rect = screen.get_rect()
         screen_size = (screen_rect.width, screen_rect.height)
-        double_size = (screen_rect.width * 2, screen_rect.height * 2)
-        half_size = DivideTuple(screen_size, 2)
-        quarter_size = DivideTuple(screen_size, 4)
+
+        # ---- Map ----
 
         # ---- GameObjects ----
 
-        self.__gameobject_canvas = pygame.Surface( (screen.get_width(), screen.get_height()), pygame.SRCALPHA, 32 ) 
+        self.__gameobject_canvas = pygame.Surface( (screen_size[0], screen_size[1]), pygame.SRCALPHA, 32 ) 
 
+        map_start = (screen_size[0] * 0.5, 0)
+        self.__map = generate_map( './cenarios/Toquio.txt', map_size, map_start)
 
-        #Fonte: https://opengameart.org/content/tileable-grass-and-water
-        #Exchange for isometric version
-        water_surf = pygame.image.load( './sprites/water.png' )
-        water_surf = water_surf.convert_alpha()
-        #Exchange for pixel art landtile isometric sprite
-        grass_tile_surf = pygame.Surface((16, 16), pygame.SRCALPHA, 32)
-        pygame.draw.rect(grass_tile_surf, (0,154,23), pygame.Rect(0, 0, 16, 16))
-        dirt_tile_surf = pygame.Surface((16, 16), pygame.SRCALPHA, 32)
-        pygame.draw.rect(dirt_tile_surf, (155,118,83), pygame.Rect(0, 0, 16, 16))
-
-        map_sprites = [ 
-            [ {
-                    '#': grass_tile_surf,
-                    '.': dirt_tile_surf,
-                    '-': water_surf
-                }[tile] for tile in line.replace("\n", "")
-            ] for line in open( './cenarios/Toquio.txt', 'r').readlines() if len(line.replace("\n", "")) > 0
-        ]
-
-        #Create a list of gameobjs named "static"
-        self.__static_objs = [
-            GameObject(pygame.Surface(double_size, pygame.SRCALPHA, 32), (-screen_size[0],-screen_size[1]), water_surf),
-            GameObject(pygame.Surface(half_size, pygame.SRCALPHA, 32), quarter_size, grass_tile_surf)
-        ]
+        self.__ocean = [ [GameObject( (1, 1), water_img, False, True, (0.1, 0.2) )] * ocean_size[1] for _ in range( ocean_size[0] ) ]
+        for i in range(ocean_size[0]):
+            for j in range(ocean_size[1]):
+                self.__ocean[i][j].pos = (map_start[0] + 25 * 0.4 * (j - i), 
+                                        map_start[1] + 25 * 0.3 * (j + i))
+        
+        self.__population = [Person() for _ in range(10)]
+        for person in self.__population:
+            person.pos = (random.randint(screen_size[0] * 0.4, screen_size[0] * 0.6), 
+                          random.randint(screen_size[1] * 0.2, screen_size[1] * 0.4))
 
         # ---- UI ----
         
-        self.__player_UI = UI( self.screen.get_width(), self.screen.get_height() * 0.185 )
+        self.__player_UI = UI( self.screen, screen_size[1] * 0.185 )
         self.__show = True
         
         # ---- Camera ----
@@ -346,10 +285,12 @@ class Game(Module):
 
     def run(self, events, clock):
 
-        game_finished = self.__satisfaction <= 0 or self.__time_left <= 0 or self.__city_integrity <= 0
-
+        lost = self.__satisfaction <= 0 or self.__city_integrity <= 0
+        win = self.__time_left <= 0
+        game_finished = lost or win
         if game_finished:
             #Fill in score
+            self.state.score = (self.__satisfaction * self.__city_integrity * self.__currency) if win else 0
             self.state.scene = Scene.SCORE
 
         self.__satisfaction = clamp(self.__satisfaction, 0, 100)
@@ -357,8 +298,11 @@ class Game(Module):
 
         delta_value = (0, 0)
         current_pos = pygame.mouse.get_pos()
+        mouse_click = False
 
         for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_click = True
             if event.type == pygame.MOUSEMOTION:        
                 delta_value = (current_pos[0] - self.__last[0], current_pos[1] - self.__last[1])
                 delta_value = (clamp( delta_value[0], -1, 1 ), clamp( delta_value[1], -1, 1 ))
@@ -372,40 +316,77 @@ class Game(Module):
                 if event.key == pygame.K_SPACE:
                     self.__satisfaction += 15
                 if event.key == pygame.K_RIGHT:
+                    self.state.score = 10
                     self.state.scene = Scene.SCORE
                 
-        
         screen_x = self.screen.get_width()
         screen_y = self.screen.get_height()
         new_camera_x = clamp(self.camera[0] + delta_value[0] * 10, -screen_x, screen_x )
         new_camera_y = clamp(self.camera[1] + delta_value[1] * 10, -screen_y, screen_y )
         self.camera = (new_camera_x, new_camera_y)
 
+        mouse_collision = (cursor_size[0] - 1, cursor_size[1] - 1)
+        mouse_rect = pygame.Rect( current_pos[0] - mouse_collision[0] * tile_size[0] * 0.125, current_pos[1] - mouse_collision[1] * tile_size[1] * 0.125, 
+                                 mouse_collision[0] * tile_size[0] * 0.25, mouse_collision[1] * tile_size[1] * 0.25 )
+
         self.screen.fill((0,0,40))
         self.__gameobject_canvas.fill((0,0,0,0))
-
         pygame.draw.rect( self.screen, (155,103,60), self.screen.get_rect(), 10 )
+
+        pygame.draw.rect(self.screen, (200,200,200), mouse_rect, 2)
+
+        obstacles = 0
+        checked = 0
+        tiles_to_exchange = []
+
+        for line in self.__ocean:
+            for tile in line:
+                tile.draw()
+                relocated_pos = ( tile.pos[0] - self.camera[0], tile.pos[1] - self.camera[1] )
+                self.__gameobject_canvas.blit( tile.surface, relocated_pos )
+
+        for l_index, line in enumerate(self.__map):
+            for t_index, obj in enumerate(line):
+                if obj != None:
+                    obj.draw()
+
+                    relocated_pos = ( obj.pos[0] - self.camera[0], obj.pos[1] - self.camera[1] )
+
+                    if colisao( obj.surface.get_rect(topleft=(relocated_pos)), mouse_rect ):
+                        if obj.hover():
+                            obstacles += 1
+                        else:
+                            tiles_to_exchange.append( (l_index, t_index) )
+                        checked += 1
+
+                    self.__gameobject_canvas.blit( obj.surface, relocated_pos )
+
+        #If mouse is clicked, -no obstacle is selected, -have money, -enough space, copy measure, paste position, and replace tiles
+        current_measure = current_measures[0]
+        if ((current_measure != None and current_measure.price < self.__currency) 
+            and (checked >= cursor_size[0] * cursor_size[1]) and (mouse_click and obstacles == 0)):
+            new_measure = copy.copy(current_measure)
+            new_measure.pos = self.__map[tiles_to_exchange[0][0]][tiles_to_exchange[0][1]].pos
+            self.__map[tiles_to_exchange[0][0]][tiles_to_exchange[0][1]] = new_measure
+            for i in range( 1, len(tiles_to_exchange) ):
+                self.__map[tiles_to_exchange[i][0]][tiles_to_exchange[i][1]] = None
+            self.__currency -= current_measure.price
         
-        #Blit and move all "static objs by camera"
-        for game_obj in self.__static_objs:
-            game_obj.pos = ( game_obj.origin[0] - self.camera[0], game_obj.origin[1] - self.camera[1] )
+        for person in self.__population:
+            person.move(map_size)
+            relocated_pos = ( person.pos[0] - self.camera[0], person.pos[1] - self.camera[1] )
+            self.__gameobject_canvas.blit( person.surface, relocated_pos )
 
-            
-            #if colisao( game_obj.surface.get_rect(), pygame.Rect(current_pos[0], current_pos[1], cursor_size, cursor_size ) ):
-                #game_obj.draw()
-                #game_obj.hover( current_pos )
-
-            self.__gameobject_canvas.blit( game_obj.surface, game_obj.pos )
-            pygame.draw.rect( self.__gameobject_canvas, (255,0,0), game_obj.surface.get_rect(topleft = game_obj.pos), 1 )
-
-        isometric_canvas = isometric_surface(self.__gameobject_canvas)
-        self.screen.blit(isometric_canvas, ( 0, 0 ))
+        self.screen.blit(self.__gameobject_canvas, ( 0, 0 ))
 
         #UI
         if self.__show:
-            self.__player_UI.draw( self.state.name, self.state.cenario, self.__currency, self.__satisfaction, self.__city_integrity, int(self.__time_left) )
+            self.__player_UI.draw( self.state.name, self.state.cenario, 
+                    self.__currency, self.__satisfaction, self.__city_integrity, int(self.__time_left), current_pos, mouse_click )
             self.screen.blit(self.__player_UI.surface, (0,0))
 
         pygame.display.flip()
 
-        self.__time_left -= clock.tick() / 1000
+        time_passed = clock.tick() / 1000
+        self.__currency += time_passed * random.randint(10, 50)
+        self.__time_left -= time_passed

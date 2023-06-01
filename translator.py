@@ -21,7 +21,7 @@ identified_objects = {
             '3': [(3, 3), wide_small_building_img, True, True, (0.125, 0.215)],
             '4': [(2, 2), tall_building_img, True, True, (0.125, 0.215)],
             '5': [(3, 2), house_building_img, True, True, (0.125, 0.215)],
-            '6': [(5, 5), inactive_volcano, True, True, (0.125, 0.215)],
+            '6': [(5, 5), inactive_volcano, True, True, (-0.325, 0.415)],
             '7': [(1, 1), block_grass_img, True, True, (0.1, 0.2)],
             '8': [(1, 1), leaf_grass_img, True, True, (0.1, 0.2)],
             ' ': None

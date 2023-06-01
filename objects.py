@@ -59,12 +59,17 @@ class GameObject():
         return self.__obstacle
 
 class Disaster(GameObject):
-    def __init__(self, damage:float, area:Tuple[int,int], safety_measures:Dict[GameObject, float],
+    def __init__(self, damage:float, area:Tuple[int,int], safety_measures:Dict[GameObject, float], duration:float,
                         tiles:Tuple[int, int],  
                         texture:pygame.Surface,
                         isometric:bool = False,
                         offset:Tuple[float,float] = (0,0)):
         super().__init__(tiles, texture, isometric, offset)
+
+        self.damage = damage
+        self.area= area
+        self.safety_measures = safety_measures
+        self.duration = duration
 
 class Measure(GameObject):
     def __init__(self, response_time:float, area:Tuple[int,int], name:str, description:str, price:float,
@@ -74,6 +79,7 @@ class Measure(GameObject):
                         offset:Tuple[float,float] = (0,0)):
         super().__init__(tiles, texture, True, isometric, offset)
         
+        self.area = area
         self.name = name
         self.description = description
         self.price = price

@@ -54,11 +54,18 @@ def satisfaction_calculator( safety_objects:List[any], budget_left:float, budget
 
     return satisfaction_increment
 
+def disaster_master_AI( time_left:int, time_max:int, satisfaction:float, integrity:float, disaster_quantity:int ):
+    time_factor = 1 - time_left / time_max
+    satisfaction_factor = satisfaction / 100
+    integrity_factor = integrity / 100
+    chance = (disaster_quantity / 10) + time_factor * 0.2 + satisfaction_factor * 0.1 + integrity_factor * 0.3 if disaster_quantity < 5 else 0 
+    return random.random() <= chance
+
 alarme_tectonico = Measure(10, (15, 15), 'Alarme Tectônico', 
                            """Um alarme que notifica os residentes sobre atividades tectonicas fora do comúm,\n 
 o que precede terremotos, tsunamis e mais, a eficácia é atrelada ao funcionamento\n
 das instituições que medem atividades tectonicas, assim como a distância dos residentes""",
-                           560, (1, 1),  pygame.image.load('./sprites/Subject 12.png'), True, (0, 0) )
+                           560, (1, 1),  pygame.image.load('./sprites/Subject 12.png'), True, (0.825, 0.815) )
 barragem_oceanica = Measure(5, (3, 3), 'Barragem Oceânica', 
                             """Uma parede sólida, alta e muito reforçada, serve para barrar o avanço d'água\n
 mesmo quando em alturas fora do comúm (em um Tsunami, por exemplo), ainda sim,\n
@@ -77,9 +84,9 @@ list_of_measures = [
     abrigo_tornado
 ]
 
-tornado = Disaster(5, (4, 4), {abrigo_tornado:10}, (2, 2), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
-tsunami = Disaster(5, (4, 4), {alarme_tectonico:5, barragem_oceanica:10}, (2, 2), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
-volcano = Disaster(5, (10, 10), {alarme_tectonico:5}, (5, 5), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+tornado = Disaster(0.005, (4, 4), {abrigo_tornado:10}, 10, (2, 2), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+tsunami = Disaster(0.005, (4, 4), {alarme_tectonico:5, barragem_oceanica:10}, 20, (2, 2), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
+volcano = Disaster(0.005, (10, 10), {alarme_tectonico:5}, 5, (5, 5), pygame.image.load('./sprites/Subject 5.png'), True, (0, 0) )
 
 list_of_disaster = [
     tornado,
@@ -168,8 +175,8 @@ class UI():
         name_text = self.__font.render(name, True, FONT_COLOR)
         cenario_text = self.__font.render(cenario, True, FONT_COLOR)
         money_text = self.__font.render("R$ " + str("%.2f" % round(currency, 2)), True, FONT_COLOR)
-        satisfaction_text = self.__font.render(str(satisfaction) + "%", True, FONT_COLOR)
-        city_integrity_text = self.__font.render(str(city_integrity) + "%", True, FONT_COLOR)
+        satisfaction_text = self.__font.render(str("%.2f" % round(satisfaction, 2)) + "%", True, FONT_COLOR)
+        city_integrity_text = self.__font.render(str("%.2f" % round(city_integrity, 2)) + "%", True, FONT_COLOR)
         time_left_text = self.__font.render(str(timedelta(seconds=time_left)), True, FONT_COLOR)
 
         bar_position_x = player_info_rect.width * 0.5 - self.__image_list[2].get_width() * 0.5
@@ -266,6 +273,9 @@ class Game(Module):
             person.pos = (random.randint(screen_size[0] * 0.4, screen_size[0] * 0.6), 
                           random.randint(screen_size[1] * 0.2, screen_size[1] * 0.4))
 
+        self.__measures = []
+        self.__disasters = []
+
         # ---- UI ----
         
         self.__player_UI = UI( self.screen, screen_size[1] * 0.185 )
@@ -282,9 +292,14 @@ class Game(Module):
         self.__satisfaction = 50
         self.__city_integrity = 100
         self.__time_left = 600
+        self.__disaster_cooldown = 5
+        self.__disaster_timer = 5
 
     def run(self, events, clock):
 
+        time_passed = clock.tick() / 1000
+
+        #Conditions for game to end
         lost = self.__satisfaction <= 0 or self.__city_integrity <= 0
         win = self.__time_left <= 0
         game_finished = lost or win
@@ -292,9 +307,6 @@ class Game(Module):
             #Fill in score
             self.state.score = (self.__satisfaction * self.__city_integrity * self.__currency) if win else 0
             self.state.scene = Scene.SCORE
-
-        self.__satisfaction = clamp(self.__satisfaction, 0, 100)
-        self.__city_integrity = clamp(self.__city_integrity, 0, 100)
 
         delta_value = (0, 0)
         current_pos = pygame.mouse.get_pos()
@@ -318,26 +330,33 @@ class Game(Module):
                 if event.key == pygame.K_RIGHT:
                     self.state.score = 10
                     self.state.scene = Scene.SCORE
-                
+        
+        #Move Camera
         screen_x = self.screen.get_width()
         screen_y = self.screen.get_height()
         new_camera_x = clamp(self.camera[0] + delta_value[0] * 10, -screen_x, screen_x )
         new_camera_y = clamp(self.camera[1] + delta_value[1] * 10, -screen_y, screen_y )
         self.camera = (new_camera_x, new_camera_y)
-
+        #Generate mouse collision
         mouse_collision = (cursor_size[0] - 1, cursor_size[1] - 1)
         mouse_rect = pygame.Rect( current_pos[0] - mouse_collision[0] * tile_size[0] * 0.125, current_pos[1] - mouse_collision[1] * tile_size[1] * 0.125, 
                                  mouse_collision[0] * tile_size[0] * 0.25, mouse_collision[1] * tile_size[1] * 0.25 )
 
+        #Fill map and reset values os collision
         self.screen.fill((0,0,40))
         self.__gameobject_canvas.fill((0,0,0,0))
         pygame.draw.rect( self.screen, (155,103,60), self.screen.get_rect(), 10 )
 
-        pygame.draw.rect(self.screen, (200,200,200), mouse_rect, 2)
-
         obstacles = 0
         checked = 0
         tiles_to_exchange = []
+
+        self.__disaster_timer -= time_passed
+        if (self.__disaster_timer <= 0):
+            will_there_be_disaster = disaster_master_AI( self.__time_left, 600, self.__satisfaction, self.__city_integrity, len(self.__disasters) )
+            self.__disaster_timer = self.__disaster_cooldown
+        else:
+            will_there_be_disaster = False
 
         for line in self.__ocean:
             for tile in line:
@@ -352,7 +371,7 @@ class Game(Module):
 
                     relocated_pos = ( obj.pos[0] - self.camera[0], obj.pos[1] - self.camera[1] )
 
-                    if colisao( obj.surface.get_rect(topleft=(relocated_pos)), mouse_rect ):
+                    if colisao_isometrica( obj.surface.get_rect(topleft=(relocated_pos)), mouse_rect ):
                         if obj.hover():
                             obstacles += 1
                         else:
@@ -360,6 +379,38 @@ class Game(Module):
                         checked += 1
 
                     self.__gameobject_canvas.blit( obj.surface, relocated_pos )
+        
+        for person in self.__population:
+            person.move(map_size)
+            relocated_pos = ( person.pos[0] - self.camera[0], person.pos[1] - self.camera[1] )
+            self.__gameobject_canvas.blit( person.surface, relocated_pos )
+
+        for disaster in self.__disasters:
+            
+            disaster.draw()
+
+            relocated_pos = ( disaster.pos[0] - self.camera[0], disaster.pos[1] - self.camera[1] )
+            self.__gameobject_canvas.blit( disaster.surface, relocated_pos )
+
+            if disaster.duration <= 0:
+                self.__disasters.remove(disaster)
+                del disaster
+            else:
+                disaster.duration -= time_passed
+
+                damage_dealt = disaster.damage
+
+                disaster_rect = pygame.Rect( disaster.pos[0], disaster.pos[1], disaster.area[0], disaster.area[1] )
+                measures_in_effect = [] 
+                for measure in self.__measures:
+                    measure_rect = pygame.Rect( measure.pos[0], measure.pos[1], measure.area[0], measure.area[1] )
+                    if colisao_isometrica( measure_rect, disaster_rect):
+                        measures_in_effect.append(measure)
+                        if disaster.safety_measures.has_key(measure):
+                            damage_dealt *= (100 - disaster.safety_measures[measure]) / 100
+
+                self.__satisfaction -= satisfaction_calculator(measures_in_effect, self.__currency, 25000)
+                self.__city_integrity -= damage_dealt
 
         #If mouse is clicked, -no obstacle is selected, -have money, -enough space, copy measure, paste position, and replace tiles
         current_measure = current_measures[0]
@@ -371,13 +422,22 @@ class Game(Module):
             for i in range( 1, len(tiles_to_exchange) ):
                 self.__map[tiles_to_exchange[i][0]][tiles_to_exchange[i][1]] = None
             self.__currency -= current_measure.price
+            self.__measures.append(new_measure)
         
-        for person in self.__population:
-            person.move(map_size)
-            relocated_pos = ( person.pos[0] - self.camera[0], person.pos[1] - self.camera[1] )
-            self.__gameobject_canvas.blit( person.surface, relocated_pos )
+        if will_there_be_disaster:
+            new_disaster = copy.copy( random.choice( list_of_disaster ))
+            random_line = random.randint( 0, map_size[0] )
+            random_column = random.randint( 0, map_size[1] )
+            new_disaster.pos = (self.screen.get_width() * 0.5 + 25 * (random_column - random_line), 
+                                25 * (random_column + random_line))
+            self.__disasters.append(new_disaster)
 
         self.screen.blit(self.__gameobject_canvas, ( 0, 0 ))
+
+        #Update values
+        self.__satisfaction = clamp(self.__satisfaction, 0, 100)
+        self.__city_integrity = clamp(self.__city_integrity, 0, 100)
+        self.__currency = clamp(self.__currency, 0, 25000)
 
         #UI
         if self.__show:
@@ -387,6 +447,5 @@ class Game(Module):
 
         pygame.display.flip()
 
-        time_passed = clock.tick() / 1000
         self.__currency += time_passed * random.randint(10, 50)
         self.__time_left -= time_passed

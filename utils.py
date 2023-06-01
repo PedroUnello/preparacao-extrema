@@ -25,4 +25,10 @@ def colisao(rect1:pygame.Rect, rect2:pygame.Rect) -> bool:
     x_1, y_1 = rect1.topleft[0], rect1.topleft[1]
     x_2, y_2 = rect2.topleft[0], rect2.topleft[1]
     return x_1 < x_2 + rect2.width and x_1 + rect1.width > x_2 and y_1 < y_2 + rect2.height and rect1.height + y_1 > y_2
+
+#Fonte: Leandro Pupo
+def colisao_isometrica(rect1:pygame.Rect, rect2:pygame.Rect) -> bool:
+    x_1, y_1 = isometric_point_displacement(rect1.topleft)
+    x_2, y_2 = isometric_point_displacement(rect2.topleft)
+    return x_1 < x_2 + rect2.width and x_1 + rect1.width > x_2 and y_1 < y_2 + rect2.height and rect1.height + y_1 > y_2
  

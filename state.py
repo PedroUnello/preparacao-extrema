@@ -1,5 +1,4 @@
 from scene import Scene
-
 class State():
     def __init__(self) -> None:
         self.scene = Scene.MENU

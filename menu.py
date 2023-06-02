@@ -21,7 +21,7 @@ class Menu(Module):
         self.state.name = default_name
         self.state.cenario = cenarios[0][0]
 
-        self.__handle.add.text_input('Nome: ', default=default_name, onchange=self.__set_name)
+        self.__handle.add.text_input('Nome: ', default=default_name, onchange=self.__set_name, maxchar=18)
         self.__handle.add.button('Jogar', self.__play)
         self.__handle.add.selector('Cenarios: ', cenarios, onchange=self.__set_cenario)
         self.__handle.add.selector('Difficuldade: ', [('Hard', 1), ('Medium', 2), ('Easy', 3)], onchange=self.__set_difficulty)
@@ -29,7 +29,6 @@ class Menu(Module):
 
     def __play(self):
         self.state.scene = Scene.GAME
-        self.state.score = 0
         self.__handle.disable()
 
     def __set_name(self, value):
@@ -41,7 +40,7 @@ class Menu(Module):
     def __set_difficulty(self, value, _):
         self.state.difficulty = value
 
-    def run(self, _):
+    def run(self, _, clock ):
         self.__handle.enable()
         self.__handle.mainloop(self.screen)
         
